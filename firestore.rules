@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── HELPERS ────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    function isVerified() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isVerified == true;
+    }
+
+    function isBanned() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBanned == true;
+    }
+
+    // ─── USERS ──────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Anyone signed in can read user profiles (for member directory)
+      allow read: if isSignedIn();
+      // Only the user can create their own profile
+      allow create: if isOwner(userId);
+      // Users can update their own profile; admins can update any
+      allow update: if isOwner(userId) || isAdmin();
+      // Only admins can delete
+      allow delete: if isAdmin();
+    }
+
+    // ─── POSTS ──────────────────────────────────────────────────────────────
+    match /posts/{postId} {
+      allow read: if isSignedIn() && !isBanned();
+      allow create: if isSignedIn() && !isBanned();
+      allow update: if isAdmin() || isOwner(resource.data.authorId);
+      allow delete: if isAdmin() || isOwner(resource.data.authorId);
+    }
+
+    // ─── VENDORS ────────────────────────────────────────────────────────────
+    match /vendors/{vendorId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified();
+      allow update: if isAdmin() || isOwner(resource.data.ownerId) || isVerified(); // vouches
+      allow delete: if isAdmin() || isOwner(resource.data.ownerId);
+    }
+
+    // ─── MATCHMAKER — strictly private ──────────────────────────────────────
+    match /vibes/{vibeId} {
+      // Only the sender can write their vibe; only admins can read all vibes
+      allow read: if isAdmin();
+      allow create: if isVerified() && request.auth.uid == request.resource.data.from;
+      allow delete: if isAdmin();
+    }
+
+    match /matches/{matchId} {
+      // Only matched users can read their own match
+      allow read: if isSignedIn() &&
+        request.auth.uid in resource.data.users;
+      allow write: if isAdmin();
+    }
+
+    // ─── PURSE / FINANCIAL ──────────────────────────────────────────────────
+    match /purse/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /contributions/{contribId} {
+      allow read: if isAdmin() || isOwner(resource.data.uid);
+      allow create: if isVerified();
+      allow update: if isAdmin();
+    }
+
+    // ─── REPUTATION LOG ──────────────────────────────────────────────────────
+    match /reputationLog/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ─── EVENTS ─────────────────────────────────────────────────────────────
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+
+      match /rsvps/{userId} {
+        allow read: if isSignedIn();
+        allow write: if isVerified() && isOwner(userId);
+      }
+    }
+
+    // ─── ROOMS / CHAT ────────────────────────────────────────────────────────
+    match /rooms/{roomId}/messages/{messageId} {
+      allow read: if isSignedIn() && !isBanned();
+      allow create: if isSignedIn() && !isBanned();
+      allow delete: if isAdmin() || isOwner(resource.data.authorId);
+    }
+  }
+}

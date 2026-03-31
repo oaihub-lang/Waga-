@@ -1,0 +1,52 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isVerified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // Profile photos — any authenticated user can upload their own
+    match /avatars/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId
+        && request.resource.size < 5 * 1024 * 1024  // 5MB limit
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Post media — verified members only
+    match /posts/{postId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isVerified()
+        && request.resource.size < 20 * 1024 * 1024  // 20MB limit
+        && (request.resource.contentType.matches('image/.*') ||
+            request.resource.contentType.matches('video/.*'));
+    }
+
+    // Ozza Room — verified only, max 50MB
+    match /ozza/{mediaId}/{fileName} {
+      allow read: if isVerified();
+      allow write: if isVerified()
+        && request.resource.size < 50 * 1024 * 1024;
+      allow delete: if isAdmin();
+    }
+
+    // Vendor photos — verified member uploads
+    match /vendors/{vendorId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isVerified()
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
