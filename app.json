@@ -11,6 +11,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#121212"
     },
+    "sdkVersion": "54.0.0",
     "assetBundlePatterns": [
       "**/*"
     ],
